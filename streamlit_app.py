@@ -1,169 +1,121 @@
 import streamlit as st
-from supabase import create_client, Client
+from supabase import create_client
 import pandas as pd
-from datetime import date
+from datetime import datetime
+from groq import Groq
 
-# ================== SUPABASE CONNECTION ==================
-@st.cache_resource
-def get_supabase():
-    return create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
+st.set_page_config(page_title="NutriMama", page_icon="👩‍🍼", layout="centered")
 
-supabase: Client = get_supabase()
+# --- SECRETS & CLIENTS ---
+SUPABASE_URL = st.secrets["SUPABASE_URL"]
+SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
+GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
 
-# ================== SESSION STATE ==================
-if "user" not in st.session_state:
-    st.session_state.user = None
-if "role" not in st.session_state:
-    st.session_state.role = None
-if "current_screen" not in st.session_state:
-    st.session_state.current_screen = "login"
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+groq = Groq(api_key=GROQ_API_KEY)
 
-st.set_page_config(page_title="NutriMama", page_icon="🌿", layout="centered")
-st.title("🌿 NutriMama")
-st.caption("Full-Stack Maternal Nutrition & Delivery System | STI-OP Pitch")
+MDDW_GROUPS = [
+    "Grains, white roots & tubers (matooke, rice)",
+    "Pulses (beans, peas, lentils)",
+    "Nuts & seeds",
+    "Dairy (milk, yoghurt)",
+    "Meat, poultry & fish",
+    "Eggs",
+    "Dark green leafy vegetables (sukuma wiki)",
+    "Vitamin A rich fruits & vegetables",
+    "Other fruits",
+    "Other vegetables"
+]
 
-# ================== LOGIN (Real Phone OTP) ==================
-if st.session_state.current_screen == "login":
-    st.subheader("🔑 Phone Login")
-    phone = st.text_input("Phone number (+256...)", "+2567")
-    
-    if st.button("Send OTP"):
-        try:
-            supabase.auth.sign_in_with_otp({"phone": phone})
-            st.success("✅ OTP sent! Check your SMS")
-            st.session_state.phone = phone
-        except Exception as e:
-            st.error(str(e))
+if "page" not in st.session_state: st.session_state.page = "language"
+if "user" not in st.session_state: st.session_state.user = None
+if "role" not in st.session_state: st.session_state.role = None
+if "active_job_id" not in st.session_state: st.session_state.active_job_id = None
 
-    otp = st.text_input("Enter 6-digit OTP", max_chars=6)
-    if st.button("Verify OTP"):
-        try:
-            response = supabase.auth.verify_otp({"phone": st.session_state.phone, "token": otp, "type": "sms"})
-            st.session_state.user = response.user
-            st.session_state.current_screen = "language"
-            st.rerun()
-        except:
-            st.error("❌ Wrong OTP. Try again.")
-
-# ================== LANGUAGE ==================
-elif st.session_state.current_screen == "language":
-    st.subheader("🌍 Select Your Preferred Language")
-    lang = st.selectbox("Language", ["English", "Luganda", "Swahili", "Runyankole"])
-    if st.button("Continue"):
-        st.session_state.language = lang
-        st.session_state.current_screen = "role"
+if st.session_state.page == "language":
+    st.title("🌍 NutriMama")
+    if st.button("Continue → English", type="primary"):
+        st.session_state.page = "demo_login"
         st.rerun()
 
-# ================== ROLE SELECTION ==================
-elif st.session_state.current_screen == "role":
-    st.subheader("Choose Your Role")
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("👩‍🍼 Mother", use_container_width=True):
-            st.session_state.role = "Mother"
-            st.session_state.current_screen = "dashboard"
-            st.rerun()
-        if st.button("🛒 Vendor", use_container_width=True):
-            st.session_state.role = "Vendor"
-            st.session_state.current_screen = "dashboard"
-            st.rerun()
-    with col2:
-        if st.button("🏍️ Bodaboda Rider", use_container_width=True):
-            st.session_state.role = "Rider"
-            st.session_state.current_screen = "dashboard"
-            st.rerun()
-        if st.button("🩺 CHW", use_container_width=True):
-            st.session_state.role = "CHW"
-            st.session_state.current_screen = "dashboard"
-            st.rerun()
-
-# ================== MAIN DASHBOARDS ==================
-else:
-    role = st.session_state.role
-    st.sidebar.success(f"✅ Logged in as {role}")
-
-    if st.sidebar.button("Logout"):
-        supabase.auth.sign_out()
-        st.session_state.clear()
-        st.rerun()
-
-    # ================== MOTHER DASHBOARD ==================
-    if role == "Mother":
-        st.header("👩‍🍼 Welcome back, Amina")
-        col1, col2 = st.columns(2)
-        with col1: st.metric("Subscription", "Monthly Active", "✅")
-        with col2: st.metric("Current MDD-W", "7/10", "✅")
-
-        st.subheader("Last 7 Days Score")
-        chart = pd.DataFrame({"Day": ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"], "Score": [4,5,6,7,8,7,9]})
-        st.line_chart(chart.set_index("Day"))
-
-        if st.button("➕ Log Today's Food", type="primary", use_container_width=True):
-            st.session_state.current_screen = "food_log"
-            st.rerun()
-
-    # ================== FOOD LOG + AI ==================
-    elif st.session_state.current_screen == "food_log":
-        st.subheader("Daily Food Logging (MDD-W)")
-        groups = [
-            "Grains (matooke, posho)", "Pulses (beans, lentils)", "Dark green leafy vegetables (sukuma wiki)",
-            "Vitamin A-rich fruits & vegetables", "Other vegetables", "Other fruits",
-            "Meat, poultry & fish", "Eggs", "Dairy", "Nuts & seeds"
-        ]
-        selected = st.multiselect("Foods eaten yesterday", groups)
-        
-        if st.button("Submit & Get AI Advice", type="primary"):
-            score = len(selected)
-            supabase.table("food_logs").insert({
-                "mother_id": st.session_state.user.id,
-                "date": str(date.today()),
-                "mddw_score": score
-            }).execute()
-
-            st.success(f"MDD-W Score: {score}/10")
-            if score >= 5:
-                st.balloons()
-                st.success("✅ Excellent! You met the WHO minimum")
-            else:
-                missing = [g for g in groups if g not in selected][:3]
-                st.error("🤖 AI Nutrition Advice")
-                st.write("**Add these tomorrow:**")
-                for item in missing:
-                    st.write(f"• {item}")
-
-            if st.button("← Back to Dashboard"):
-                st.session_state.current_screen = "dashboard"
+elif st.session_state.page == "demo_login":
+    st.title("👋 Welcome to NutriMama")
+    phone = st.text_input("Phone number", "+25683117299")
+    if st.button("Send Demo OTP", type="primary"):
+        st.success("✅ Demo OTP sent! Code is **123456**")
+        st.session_state.temp_phone = phone
+    if "temp_phone" in st.session_state:
+        code = st.text_input("Enter OTP", max_chars=6)
+        if st.button("Verify"):
+            if code == "123456":
+                st.session_state.user = {"phone": st.session_state.temp_phone}
+                st.session_state.page = "profile_setup"
                 st.rerun()
 
-    # ================== VENDOR ==================
+elif st.session_state.page == "profile_setup":
+    st.title("👤 Complete Your Profile")
+    name = st.text_input("Full Name", "Amina Nakato")
+    role_choice = st.selectbox("Your Role", ["Mother", "Vendor", "Bodaboda Rider", "CHW"])
+    extra = {}
+    if role_choice == "Mother":
+        age = st.number_input("Age", 18, 45, 28)
+        trimester = st.selectbox("Trimester", ["1st", "2nd", "3rd"])
+        extra = {"age": age, "trimester": trimester}
+    if st.button("Save Profile & Continue"):
+        supabase.table("profiles").upsert({"phone": st.session_state.user["phone"], "name": name, "role": role_choice, **extra}).execute()
+        st.session_state.user["name"] = name
+        st.session_state.role = role_choice
+        st.session_state.page = "dashboard"
+        st.rerun()
+
+elif st.session_state.page == "dashboard":
+    role = st.session_state.role
+    st.title(f"{role} Dashboard")
+    if role == "Mother":
+        st.subheader("📦 Subscription & Delivery")
+        plan = st.radio("Select Service", ["AI Advice only (FREE)", "Delivery only", "Both AI Advice + Delivery"], horizontal=True)
+        if plan in ["Delivery only", "Both AI Advice + Delivery"]:
+            basket = st.selectbox("Choose Basket", ["Basket 1 (5 items)", "Basket 2 (7 items)", "Basket 3 (10 items)"])
+            max_f = 5 if "5" in basket else 7 if "7" in basket else 10
+            selected = st.multiselect(f"Pick {max_f} items", MDDW_GROUPS)
+            if st.button("Place Order") and len(selected) == max_f:
+                supabase.table("orders").insert({"phone": st.session_state.user["phone"], "mother_name": st.session_state.user["name"], "basket_size": basket, "selected_foods": selected, "status": "New"}).execute()
+                st.success("Order Placed!")
+        if plan in ["AI Advice only (FREE)", "Both AI Advice + Delivery"]:
+            st.divider()
+            st.subheader("🍲 Daily Food Log + AI Coach")
+            ate = st.multiselect("What did you eat yesterday?", MDDW_GROUPS)
+            if st.button("Get AI Feedback"): st.info("AI Coach: Analyzing diversity...")
+
+    elif role == "Bodaboda Rider":
+        if st.session_state.active_job_id is None:
+            st.subheader("🚀 Available Jobs")
+            jobs = supabase.table("orders").select("*").eq("status", "New").execute()
+            for job in jobs.data:
+                if st.button(f"Accept: {job['mother_name']}", key=job['id']):
+                    supabase.table("orders").update({"status": "Picked Up"}).eq("id", job['id']).execute()
+                    st.session_state.active_job_id = job['id']
+                    st.rerun()
+        else:
+            st.subheader("🗺️ Active Navigation")
+            if st.button("Complete Delivery"):
+                supabase.table("orders").update({"status": "Delivered"}).eq("id", st.session_state.active_job_id).execute()
+                st.session_state.active_job_id = None
+                st.rerun()
+
     elif role == "Vendor":
-        st.header("🛒 Vendor Dashboard - Ishaka Market")
-        orders = supabase.table("orders").select("*").execute().data
-        if orders:
-            st.dataframe(pd.DataFrame(orders))
-        else:
-            st.info("No orders yet")
-        if st.button("Mark Order Ready"):
-            st.success("✅ Order prepared and ready for rider")
+        st.subheader("🏪 Kitchen Orders")
+        orders = supabase.table("orders").select("*").eq("status", "New").execute()
+        for o in orders.data:
+            if st.button(f"Ready: {o['mother_name']}", key=o['id']):
+                supabase.table("orders").update({"status": "Ready"}).eq("id", o['id']).execute()
+                st.rerun()
 
-    # ================== RIDER ==================
-    elif role == "Rider":
-        st.header("🏍️ Bodaboda Rider")
-        st.write("**Wallet:** UGX 45,000")
-        st.write("Available Deliveries:")
-        if st.button("Accept Delivery - Amina Nakato"):
-            st.success("Job accepted! Navigate to Bushenyi Health Centre")
-
-    # ================== CHW ==================
     elif role == "CHW":
-        st.header("🩺 CHW Dashboard")
-        st.subheader("Risk Alerts (MDD-W < 5)")
-        low_scores = supabase.table("food_logs").select("*").lt("mddw_score", 5).execute().data
-        if low_scores:
-            df = pd.DataFrame(low_scores)
-            st.dataframe(df)
-            st.warning("⚠️ 3 mothers need immediate follow-up!")
-        else:
-            st.success("All mothers are doing well")
+        st.subheader("⚠️ Health Alerts")
+        alerts = supabase.table("alerts").select("*").eq("seen", False).execute()
+        for a in alerts.data: st.error(f"ALERT: {a['mother_name']} - {a['message']}")
 
-st.caption("Full-Stack NutriMama | Supabase Backend | Built for STI-OP 2026")
+    if st.sidebar.button("Logout"):
+        st.session_state.clear()
+        st.rerun()
