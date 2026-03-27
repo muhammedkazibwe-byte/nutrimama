@@ -6,9 +6,9 @@ from groq import Groq
 
 st.set_page_config(page_title="NutriMama", page_icon="👩‍🍼", layout="centered")
 
-SUPABASE_URL = st.secrets["SUPABASE_URL"]
-SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
-GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
+SUPABASE_URL = st.secrets["https://jxmbvnrfnivatuweaqld.supabase.co"]
+SUPABASE_KEY = st.secrets["sb_publishable_a9l6tpI4Q5e1iB1ZGG_WmA_RPEfl6H2"]
+GROQ_API_KEY = st.secrets["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"]
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 groq = Groq(api_key=GROQ_API_KEY)
